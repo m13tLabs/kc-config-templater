@@ -39,6 +39,12 @@ def upper_snake(identifier: str) -> str:
     return "_".join(identifier.split("-")).upper()
 
 
+def secret_group_key(secret_key_prefix: str, category_prefix: str) -> str:
+    """Top-level key a category's secrets are grouped under in the "nested"
+    secrets-file structure, e.g. ('kc', 'Client') -> 'kcClientSecrets'."""
+    return f"{secret_key_prefix}{category_prefix}Secrets"
+
+
 _PLACEHOLDER_VALUES_RE = re.compile(r"^\{\{ \$\.Values\.([A-Za-z0-9_.]+) \}\}$")
 _PLACEHOLDER_ENV_RE = re.compile(r"^\$\(env:([A-Za-z0-9_]+)\)$")
 

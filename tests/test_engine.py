@@ -1,7 +1,9 @@
 import copy
 
-from kc_config_templater.config import EngineConfig, ManagedConfig
-from kc_config_templater.engine import detemplatize, templatize
+import pytest
+
+from kc_config_templater.config import EngineConfig, ManagedConfig, ScanTarget
+from kc_config_templater.engine import detemplatize, flatten_secrets, templatize
 
 APPS_RAW = {
     "realm": "apps",
@@ -50,6 +52,10 @@ def managed_config() -> EngineConfig:
             enabled=True, prefix="kc-master-", env_prefix="KC_MASTER_", label="Master"
         )
     )
+
+
+def nested_config() -> EngineConfig:
+    return EngineConfig(secret_structure="nested")
 
 
 def test_templatize_basic_client_secret():
@@ -192,3 +198,109 @@ def test_round_trip_through_realistic_cross_realm_run():
 
     master_back = detemplatize(master_result.templated, config, master_result.secrets)
     assert master_back.rendered == MASTER_RAW
+
+
+# --- secret_structure: nested -----------------------------------------------
+
+
+def test_flat_structure_tree_matches_secrets():
+    """secret_structure defaults to "flat": the write-ready tree is just the
+    flat secrets mapping, byte-for-byte - existing callers see no change."""
+    result = templatize(APPS_RAW, default_config())
+    assert result.secret_tree == result.secrets
+
+
+def test_nested_structure_groups_secrets_by_category():
+    result = templatize(APPS_RAW, nested_config())
+    # the flat mapping (used internally for collisions/detemplatize) is
+    # unaffected by secret_structure
+    assert result.secrets["kcClientBlogsClientSecret"] == "realBlogsSecret333"
+
+    assert result.secret_tree["kcClientSecrets"] == {
+        "blogs": "realBlogsSecret333",
+        "blogsAutoglasReinhardt": "realAsrSecret444",
+    }
+    assert result.secret_tree["kcIdentityProviderSecrets"] == {
+        "github": "appsGithubSecretBBB",
+        "apple": "applePemCCC",
+    }
+    assert result.secret_tree["kcKeyProviderSecrets"] == {
+        "hmac": "hmacSecretDDD",
+        "aes": "aesSecretEEE",
+    }
+
+
+def test_nested_structure_keeps_managed_secrets_flat():
+    config = EngineConfig(
+        secret_structure="nested",
+        managed=ManagedConfig(enabled=True, prefix="kc-master-", env_prefix="KC_MASTER_", label="Master"),
+    )
+    result = templatize(MASTER_RAW, config)
+
+    # managed client secret and managed user password: flat scalars, not grouped
+    assert result.secret_tree["kcMasterAuditorClientSecret"] == "realAuditorSecret111"
+    assert result.secret_tree["kcMasterAdminPassword"] == "realAdminPass222"
+    # the one non-managed secret in MASTER_RAW (the github IdP) is still grouped
+    assert result.secret_tree["kcIdentityProviderSecrets"] == {"github": "masterGithubSecretAAA"}
+
+
+def test_nested_structure_collision_raises():
+    """Two scanTargets sharing a categoryPrefix but different fieldLabels can
+    collide on the same (group, leaf) once field_label is dropped for the
+    nested group name - this must fail loudly, not silently drop a secret."""
+    config = EngineConfig(
+        secret_structure="nested",
+        scan_targets=(
+            ScanTarget(
+                container=("thingsA",),
+                id_field="name",
+                fields=(("secretA",),),
+                category_prefix="Dup",
+                field_label="SecretA",
+                values_segment="thingsA",
+            ),
+            ScanTarget(
+                container=("thingsB",),
+                id_field="name",
+                fields=(("secretB",),),
+                category_prefix="Dup",
+                field_label="SecretB",
+                values_segment="thingsB",
+            ),
+        ),
+    )
+    raw = {
+        "realm": "r",
+        "thingsA": [{"name": "foo", "secretA": "valueOne"}],
+        "thingsB": [{"name": "foo", "secretB": "valueTwo"}],
+    }
+    with pytest.raises(ValueError, match="kcDupSecrets.foo"):
+        templatize(raw, config)
+
+
+def test_flatten_secrets_round_trips_nested_tree():
+    config = nested_config()
+    result = templatize(APPS_RAW, config)
+    assert flatten_secrets(result.secret_tree, config) == result.secrets
+
+
+def test_flatten_secrets_passes_through_flat_scalars():
+    config = default_config()
+    result = templatize(APPS_RAW, config)
+    assert flatten_secrets(result.secret_tree, config) == result.secrets
+
+
+def test_flatten_secrets_rejects_unknown_group():
+    with pytest.raises(ValueError, match="kcNoSuchSecrets"):
+        flatten_secrets({"kcNoSuchSecrets": {"foo": "bar"}}, default_config())
+
+
+def test_round_trip_through_nested_structure():
+    """The full, realistic nested-mode flow: templatize, write-ready tree ->
+    flatten -> detemplatize, same as cli.py does across a `render` run."""
+    config = nested_config()
+    result = templatize(APPS_RAW, config)
+    reloaded_secrets = flatten_secrets(result.secret_tree, config)
+    rendered = detemplatize(result.templated, config, reloaded_secrets)
+    assert rendered.missing == []
+    assert rendered.rendered == APPS_RAW

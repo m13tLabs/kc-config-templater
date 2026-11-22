@@ -10,6 +10,7 @@ def test_default_config():
     assert config.values_path_prefix == "keycloakConfigCli.configSecret"
     assert config.managed.enabled is False
     assert config.scan_targets == DEFAULT_SCAN_TARGETS
+    assert config.secret_structure == "flat"
 
 
 def test_load_overrides_values_path_prefix_and_managed(tmp_path: Path):
@@ -68,3 +69,15 @@ def test_managed_enabled_with_all_fields_is_fine():
 
 def test_managed_disabled_requires_nothing():
     ManagedConfig(enabled=False)  # must not raise
+
+
+def test_load_overrides_secret_structure(tmp_path: Path):
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text("secretStructure: nested\n")
+    config = EngineConfig.load(config_file)
+    assert config.secret_structure == "nested"
+
+
+def test_invalid_secret_structure_raises():
+    with pytest.raises(ValueError, match="secret_structure"):
+        EngineConfig(secret_structure="bogus")

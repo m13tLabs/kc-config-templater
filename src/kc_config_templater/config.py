@@ -110,14 +110,40 @@ DEFAULT_SCAN_TARGETS: tuple[ScanTarget, ...] = (
 
 DEFAULT_WARNING_SUFFIX_PATTERN = r"(secret|password|credential|privatekey)$"
 
+VALID_SECRET_STRUCTURES = ("flat", "nested")
+
 
 @dataclass(frozen=True)
 class EngineConfig:
+    """secret_structure controls the shape of the generated secrets file:
+
+    "flat" (default): one top-level `kc<Category><Identifier><FieldLabel>:
+    value` entry per secret - the original, fully mechanical naming scheme.
+
+    "nested": per-category secrets are grouped under a
+    `kc<Category>Secrets:` map keyed by the identifier's camelCase form
+    (e.g. `kcClientSecrets: {nextcloud: ...}`). Managed/env-substituted
+    secrets (see ManagedConfig) are always written flat, structure
+    notwithstanding - they're already routed through env vars, not a Helm
+    Values map, so grouping them brings no benefit and risks a leaf
+    collision between a managed client and a managed user that happen to
+    share an identifier suffix. Either shape can be read back (including a
+    file mixing both, which is exactly what managed + nested produces).
+    """
+
     values_path_prefix: str = "keycloakConfigCli.configSecret"
     secret_key_prefix: str = "kc"
     scan_targets: tuple[ScanTarget, ...] = DEFAULT_SCAN_TARGETS
     managed: ManagedConfig = field(default_factory=ManagedConfig)
     warning_suffix_pattern: str = DEFAULT_WARNING_SUFFIX_PATTERN
+    secret_structure: str = "flat"
+
+    def __post_init__(self) -> None:
+        if self.secret_structure not in VALID_SECRET_STRUCTURES:
+            raise ValueError(
+                f"secret_structure must be one of {VALID_SECRET_STRUCTURES}, "
+                f"got {self.secret_structure!r}"
+            )
 
     @staticmethod
     def default() -> EngineConfig:
@@ -138,6 +164,8 @@ class EngineConfig:
             kwargs["secret_key_prefix"] = raw["secretKeyPrefix"]
         if "warningSuffixPattern" in raw:
             kwargs["warning_suffix_pattern"] = raw["warningSuffixPattern"]
+        if "secretStructure" in raw:
+            kwargs["secret_structure"] = raw["secretStructure"]
 
         if "managed" in raw:
             m = raw["managed"]

@@ -99,9 +99,11 @@ kc-config-templater export \
 
 This pulls the realm via Keycloak's Admin REST API (`partial-export`),
 writes the full export with real secrets to `--out-raw` (never commit this),
-the templated candidate to `--out-templated` (commit this), and the flat
-`key: value` secrets it extracted to `--out-secrets` (never commit this -
-merge it into whatever secrets store your deployment pipeline uses).
+the templated candidate to `--out-templated` (commit this), and the
+secrets it extracted to `--out-secrets` (never commit this - merge it into
+whatever secrets store your deployment pipeline uses). `--out-secrets` is a
+flat `key: value` mapping by default, or grouped by category with
+`secretStructure: nested` - see "Secrets file structure" below.
 
 Run it for each realm you have, **in a stable order** (alphabetically by
 realm name is the default and recommended - see "Collision handling" below),
@@ -162,6 +164,37 @@ form; the secret key used in the generated secrets file is
 e.g. identifier `blogs-autoglas-reinhardt` -> Values path
 `keycloakConfigCli.configSecret.clients.blogsAutoglasReinhardt`, secret key
 `kcClientBlogsAutoglasReinhardtClientSecret`.
+
+### Secrets file structure
+
+By default (`secretStructure: flat`) the generated secrets file is a single
+flat mapping, one entry per secret key as derived above:
+
+```yaml
+kcClientBlogsClientSecret: realBlogsSecret333
+kcIdentityProviderGithubClientSecret: appsGithubSecretBBB
+```
+
+Set `secretStructure: nested` to group each category's secrets under one
+top-level key instead, keyed by the identifier's camelCase form - handy if
+your secrets store (or the humans reading the file) prefer structure over a
+long mechanical key:
+
+```yaml
+kcClientSecrets:
+  blogs: realBlogsSecret333
+kcIdentityProviderSecrets:
+  github: appsGithubSecretBBB
+```
+
+Managed/env-substituted secrets (see below) are always written as flat
+scalars, structure notwithstanding - they're already routed through env
+vars rather than a Helm Values map, so a file with `managed.enabled: true`
+and `secretStructure: nested` mixes nested groups and flat scalars at the
+top level. Either shape is accepted back by `--seed-secrets`/`render`'s
+`--secrets`, including that mix, so switching `secretStructure` doesn't
+invalidate secrets files you already have - only future `--out-secrets`
+writes change shape.
 
 ### Collision handling
 

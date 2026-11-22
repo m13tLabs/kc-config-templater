@@ -10,6 +10,11 @@ valuesPathPrefix: keycloakConfigCli.configSecret
 # Prefix for every generated secret key, e.g. "kc" -> "kcClientBlogsClientSecret".
 secretKeyPrefix: kc
 
+# "flat" (default): one top-level key per secret, e.g. kcClientBlogsClientSecret.
+# "nested": secrets grouped per category under one key, e.g.
+# kcClientSecrets: {blogs: ...} - see README "Secrets file structure".
+secretStructure: flat
+
 # Regex (case-insensitive) applied to the LAST path segment of any scalar
 # field in the raw export. A match that isn't covered by a scanTarget below
 # (or already a placeholder) is reported as a warning, not silently ignored.
