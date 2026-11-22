@@ -1,0 +1,39 @@
+# Example kc-config-templater config. Everything here is optional - omit a
+# key to keep the built-in default. Pass with --config path/to/this-file.yaml.
+
+# Prefix prepended to every Helm Values placeholder path this tool writes.
+# Change this to match your own chart's Values layout.
+valuesPathPrefix: keycloakConfigCli.configSecret
+
+# Prefix for every generated secret key, e.g. "kc" -> "kcClientBlogsClientSecret".
+secretKeyPrefix: kc
+
+# Regex (case-insensitive) applied to the LAST path segment of any scalar
+# field in the raw export. A match that isn't covered by a scanTarget below
+# (or already a placeholder) is reported as a warning, not silently ignored.
+warningSuffixPattern: "(secret|password|credential|privatekey)$"
+
+# Off by default. Enable if your deployment pipeline resolves some
+# identifiers (by a naming convention, e.g. "kc-master-*") via
+# keycloak-config-cli's own IMPORT_VARSUBSTITUTION_ENABLED env-var
+# substitution instead of a Helm Values placeholder - see README
+# "Managed/env-substituted secrets".
+managed:
+  enabled: false
+  prefix: "kc-master-"
+  envPrefix: "KC_MASTER_"
+  label: "Master"
+
+# The built-in defaults already cover clients[].secret,
+# identityProviders[].config.{clientSecret,p8Content}, and
+# components."org.keycloak.keys.KeyProvider"[].config.secret[0]. Only list
+# scanTargets here if you want to ADD to (not replace) that - e.g. for an
+# LDAP user-federation provider's bind credential:
+#
+# scanTargets:
+#   - container: ["components", "org.keycloak.storage.UserStorageProvider"]
+#     idField: "name"
+#     fields: [["config", "bindCredential", 0]]
+#     categoryPrefix: "LdapProvider"
+#     fieldLabel: "BindCredential"
+#     valuesSegment: "ldapProvider"
