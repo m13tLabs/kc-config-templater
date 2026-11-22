@@ -4,31 +4,32 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import yaml
 
 from .config import EngineConfig
-from .engine import DetemplatizeResult, TemplatizeResult, detemplatize, templatize
+from .engine import DetemplatizeResult, TemplatizeResult, detemplatize, flatten_secrets, templatize
 
 
 def _load_config(path: str | None) -> EngineConfig:
     return EngineConfig.load(Path(path)) if path else EngineConfig.default()
 
 
-def _load_secrets(path: str | None) -> dict[str, str]:
+def _load_secrets(path: str | None, config: EngineConfig) -> dict[str, str]:
     if not path:
         return {}
     data = yaml.safe_load(Path(path).read_text()) or {}
     if not isinstance(data, dict):
-        raise SystemExit(f"Error: {path} does not contain a flat mapping of key: value secrets.")
-    return data
+        raise SystemExit(f"Error: {path} does not contain a mapping of key: value secrets.")
+    return flatten_secrets(data, config)
 
 
 def _write_json(path: str, data: object) -> None:
     Path(path).write_text(json.dumps(data, indent=2) + "\n")
 
 
-def _write_secrets_yaml(path: str, secrets: dict[str, str]) -> None:
+def _write_secrets_yaml(path: str, secrets: dict[str, Any]) -> None:
     Path(path).write_text(yaml.safe_dump(secrets, sort_keys=False, default_flow_style=False))
 
 
@@ -53,7 +54,7 @@ def cmd_export(args: argparse.Namespace) -> None:
     from .keycloak_client import get_admin_token, partial_export
 
     config = _load_config(args.config)
-    seen = _load_secrets(args.seed_secrets)
+    seen = _load_secrets(args.seed_secrets, config)
 
     token = get_admin_token(args.keycloak_url, args.admin_user, args.admin_password)
     raw = partial_export(args.keycloak_url, token, args.realm)
@@ -63,24 +64,24 @@ def cmd_export(args: argparse.Namespace) -> None:
 
     result = templatize(raw, config, seen=seen)
     _write_json(args.out_templated, result.templated)
-    _write_secrets_yaml(args.out_secrets, result.secrets)
+    _write_secrets_yaml(args.out_secrets, result.secret_tree)
     _report_templatize(result, args.out_secrets)
 
 
 def cmd_template(args: argparse.Namespace) -> None:
     config = _load_config(args.config)
-    seen = _load_secrets(args.seed_secrets)
+    seen = _load_secrets(args.seed_secrets, config)
     raw = json.loads(Path(args.in_raw).read_text())
 
     result = templatize(raw, config, seen=seen)
     _write_json(args.out_templated, result.templated)
-    _write_secrets_yaml(args.out_secrets, result.secrets)
+    _write_secrets_yaml(args.out_secrets, result.secret_tree)
     _report_templatize(result, args.out_secrets)
 
 
 def cmd_render(args: argparse.Namespace) -> None:
     config = _load_config(args.config)
-    secrets = _load_secrets(args.secrets)
+    secrets = _load_secrets(args.secrets, config)
     templated = json.loads(Path(args.templated).read_text())
 
     result: DetemplatizeResult = detemplatize(templated, config, secrets)

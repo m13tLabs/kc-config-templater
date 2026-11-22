@@ -21,6 +21,7 @@ from .naming import (
     extract_values_path,
     is_placeholder,
     pascal_word,
+    secret_group_key,
     to_camel,
     to_pascal,
     upper_snake,
@@ -41,6 +42,7 @@ class Warning_:
 class TemplatizeResult:
     templated: Json
     secrets: dict[str, str]
+    secret_tree: dict[str, Any]
     warnings: list[Warning_]
 
 
@@ -86,10 +88,11 @@ def _derive_values_naming(
     realm: str,
     seen: dict[str, str],
     value: str,
-) -> tuple[str, str]:
-    """Returns (secret_key, values_path), both derived from the same
-    effective identifier so detemplatize can reverse this from the path text
-    alone - see README "Collision handling"."""
+) -> tuple[str, str, str]:
+    """Returns (secret_key, values_path, effective_identifier). secret_key
+    and values_path are both derived from the same effective identifier so
+    detemplatize can reverse this from the path text alone - see README
+    "Collision handling"."""
     plain_key = f"{config.secret_key_prefix}{target.category_prefix}{to_pascal(identifier)}{target.field_label}"
     if plain_key in seen and seen[plain_key] != value:
         effective_identifier = f"{identifier}-{realm}"
@@ -101,7 +104,35 @@ def _derive_values_naming(
         f"{to_pascal(effective_identifier)}{target.field_label}"
     )
     values_path = f"{config.values_path_prefix}.{target.values_segment}.{to_camel(effective_identifier)}"
-    return secret_key, values_path
+    return secret_key, values_path, effective_identifier
+
+
+def _add_to_tree(
+    tree: dict[str, Any],
+    config: EngineConfig,
+    category_prefix: str,
+    identifier: str,
+    secret_key: str,
+    value: str,
+) -> None:
+    """Adds one secret to the write-ready secrets structure, flat or grouped
+    by category depending on config.secret_structure - see
+    EngineConfig.secret_structure."""
+    if config.secret_structure != "nested":
+        tree[secret_key] = value
+        return
+
+    group = secret_group_key(config.secret_key_prefix, category_prefix)
+    leaf = to_camel(identifier)
+    bucket = tree.setdefault(group, {})
+    if leaf in bucket and bucket[leaf] != value:
+        raise ValueError(
+            f"Nested secret structure collision: {group}.{leaf} would get two different "
+            "values. Two scanTargets probably share a categoryPrefix but use different "
+            "fieldLabels for the same identifier - give them distinct categoryPrefix "
+            "values, or use secretStructure: flat."
+        )
+    bucket[leaf] = value
 
 
 def _managed_env_vars(config: EngineConfig, identifier: str) -> tuple[str, str]:
@@ -125,6 +156,7 @@ def templatize(raw: Json, config: EngineConfig, seen: dict[str, str] | None = No
     seen = dict(seen or {})
     doc = copy.deepcopy(raw)
     secrets: dict[str, str] = {}
+    secret_tree: dict[str, Any] = {}
     covered: set[PathTuple] = set()
     realm = raw.get("realm", "unknown")
 
@@ -161,25 +193,35 @@ def templatize(raw: Json, config: EngineConfig, seen: dict[str, str] | None = No
                         f"{config.secret_key_prefix}{config.managed.label}"
                         f"{to_pascal(identifier[len(config.managed.prefix) :])}{target.field_label}"
                     )
+                    # Managed secrets stay flat regardless of secret_structure - see
+                    # EngineConfig.secret_structure.
+                    secret_tree[secret_key] = original
                 else:
-                    secret_key, values_path = _derive_values_naming(
+                    secret_key, values_path, effective_identifier = _derive_values_naming(
                         config, target, identifier, realm, {**seen, **secrets}, original
                     )
                     placeholder = values_placeholder(values_path)
+                    _add_to_tree(
+                        secret_tree, config, target.category_prefix, effective_identifier, secret_key, original
+                    )
 
                 set_path(doc, field_path, placeholder)
                 secrets[secret_key] = original
                 covered.add(field_path)
 
     if config.managed.enabled:
-        _templatize_managed_users(doc, config, secrets, covered)
+        _templatize_managed_users(doc, config, secrets, secret_tree, covered)
 
     warnings = _find_warnings(raw, config, covered)
-    return TemplatizeResult(templated=doc, secrets=secrets, warnings=warnings)
+    return TemplatizeResult(templated=doc, secrets=secrets, secret_tree=secret_tree, warnings=warnings)
 
 
 def _templatize_managed_users(
-    doc: Json, config: EngineConfig, secrets: dict[str, str], covered: set[PathTuple]
+    doc: Json,
+    config: EngineConfig,
+    secrets: dict[str, str],
+    secret_tree: dict[str, Any],
+    covered: set[PathTuple],
 ) -> None:
     """Users whose username starts with the managed prefix (e.g.
     "kc-master-admin") get their username and first password credential
@@ -218,6 +260,9 @@ def _templatize_managed_users(
         secret_key = f"{config.secret_key_prefix}{config.managed.label}{to_pascal(suffix)}Password"
         set_path(doc, value_path, env_placeholder(value_var))
         secrets[secret_key] = original
+        # Managed secrets stay flat regardless of secret_structure - see
+        # EngineConfig.secret_structure.
+        secret_tree[secret_key] = original
         covered.add(value_path)
 
 
@@ -253,6 +298,37 @@ def _find_warnings(raw: Json, config: EngineConfig, covered: set[PathTuple]) -> 
             preview = repr(value)
         warnings.append(Warning_(path=path, preview=preview))
     return warnings
+
+
+def _group_category_lookup(config: EngineConfig) -> dict[str, tuple[str, str]]:
+    """group key (as produced by secret_group_key) -> (category_prefix, field_label)."""
+    return {
+        secret_group_key(config.secret_key_prefix, t.category_prefix): (t.category_prefix, t.field_label)
+        for t in config.scan_targets
+    }
+
+
+def flatten_secrets(data: dict[str, Any], config: EngineConfig) -> dict[str, str]:
+    """Flattens a secrets mapping loaded from disk - which may be fully flat
+    (secretStructure: flat, or an older file), fully nested (secretStructure:
+    nested), or a mix (managed secrets are always flat scalars even in
+    nested mode, see EngineConfig.secret_structure) - back into the flat
+    secret_key -> value form the rest of this module works with."""
+    lookup = _group_category_lookup(config)
+    flat: dict[str, str] = {}
+    for key, value in data.items():
+        if not isinstance(value, dict):
+            flat[key] = value
+            continue
+        if key not in lookup:
+            raise ValueError(
+                f"Unknown secret group {key!r} in secrets file - no scanTarget's "
+                "categoryPrefix produces this group name with the current config."
+            )
+        category_prefix, field_label = lookup[key]
+        for leaf, leaf_value in value.items():
+            flat[f"{config.secret_key_prefix}{category_prefix}{pascal_word(leaf)}{field_label}"] = leaf_value
+    return flat
 
 
 # --- detemplatize -----------------------------------------------------------

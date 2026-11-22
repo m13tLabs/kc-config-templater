@@ -131,6 +131,40 @@ password-type credential (handled separately in
 credential to use isn't a fixed index), all go through this path when
 `managed.enabled` and the identifier matches.
 
+**Secret structure** (`EngineConfig.secret_structure`, `"flat"` by default,
+or `"nested"`): this controls only the *shape* of the generated/consumed
+secrets file, not the mechanical naming above - the flat `secret_key`
+derived above is always computed and is what `detemplatize`/collision
+handling key off internally (`TemplatizeResult.secrets`, unaffected by this
+setting). `secret_structure` only changes `TemplatizeResult.secret_tree`,
+the write-ready structure `cli.py` actually serializes:
+
+- `"flat"`: `secret_tree == secrets` (unchanged, byte-for-byte).
+- `"nested"`: non-managed secrets are grouped under
+  `naming.secret_group_key(secretKeyPrefix, categoryPrefix)` (e.g.
+  `kcClientSecrets`), keyed by `camelCase(identifier)` - dropping
+  `fieldLabel` from the group name, which only stays collision-free because
+  every built-in `ScanTarget` has exactly one `fieldLabel` per
+  `categoryPrefix`. `engine._add_to_tree` raises `ValueError` rather than
+  silently overwriting if a custom config's `scanTargets` break that
+  assumption (same `categoryPrefix`, different `fieldLabel`, same
+  identifier, different values) - **don't change this to silently last-write-
+  wins**, that would be exactly the kind of silent secret loss this project
+  is built to avoid elsewhere (see "Unmapped secret-looking fields" below).
+  Managed secrets are always written flat within the tree regardless of
+  this setting (same reasoning: their `fieldLabel` isn't visible in a
+  label-less group key, and a managed client/user sharing an identifier
+  suffix would otherwise collide) - see `secret_tree[secret_key] = ...`
+  calls in `templatize()`/`_templatize_managed_users` vs. the
+  `_add_to_tree()` call for everything else.
+- Reading a secrets file back (`cli._load_secrets` -> `engine.flatten_secrets`)
+  accepts either shape, or a mix of both (exactly what managed + nested
+  produces) - a dict value is a nested group and gets expanded back via
+  `_group_category_lookup` (the mirror of `_category_lookup`, keyed by group
+  name instead of Values-path prefix); anything else is passed through as
+  an already-flat scalar. An unrecognized group key raises rather than
+  dropping those secrets silently.
+
 **Unmapped secret-looking fields**: `_find_warnings` flags any scalar whose
 *last* path segment matches `warningSuffixPattern` (default:
 `(secret|password|credential|privatekey)$`, case-insensitive, suffix-anchored
@@ -231,7 +265,7 @@ and fixed in commit `916162c` - see below.
   here) against a real live Keycloak + docker-compose stack, producing
   byte-for-byte identical placeholder/secrets output to the prior
   implementation.
-- Test suite: 25 tests across `test_naming.py`/`test_config.py`/
+- Test suite: 35 tests across `test_naming.py`/`test_config.py`/
   `test_engine.py`, plus the CI `docker` job's smoke test. Keep this number
   roughly current in mind when judging whether a change has adequate
   coverage - a new `ScanTarget` field, a new `EngineConfig` option, or a new
