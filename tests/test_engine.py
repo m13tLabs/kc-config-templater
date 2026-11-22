@@ -45,7 +45,11 @@ def default_config() -> EngineConfig:
 
 
 def managed_config() -> EngineConfig:
-    return EngineConfig(managed=ManagedConfig(enabled=True))
+    return EngineConfig(
+        managed=ManagedConfig(
+            enabled=True, prefix="kc-master-", env_prefix="KC_MASTER_", label="Master"
+        )
+    )
 
 
 def test_templatize_basic_client_secret():

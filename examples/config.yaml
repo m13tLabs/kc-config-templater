@@ -1,5 +1,7 @@
 # Example kc-config-templater config. Everything here is optional - omit a
-# key to keep the built-in default. Pass with --config path/to/this-file.yaml.
+# key to keep the built-in default - except managed.prefix/envPrefix/label,
+# which are required once managed.enabled is true (no default exists for
+# those, see below). Pass with --config path/to/this-file.yaml.
 
 # Prefix prepended to every Helm Values placeholder path this tool writes.
 # Change this to match your own chart's Values layout.
@@ -13,11 +15,15 @@ secretKeyPrefix: kc
 # (or already a placeholder) is reported as a warning, not silently ignored.
 warningSuffixPattern: "(secret|password|credential|privatekey)$"
 
-# Off by default. Enable if your deployment pipeline resolves some
-# identifiers (by a naming convention, e.g. "kc-master-*") via
+# Off by default, and prefix/envPrefix/label have NO default once enabled -
+# there is no universal convention here, it's entirely your deployment
+# pipeline's own naming. Enable this if it resolves some identifiers (by
+# whatever prefix convention it uses, e.g. a hypothetical "kc-master-*") via
 # keycloak-config-cli's own IMPORT_VARSUBSTITUTION_ENABLED env-var
 # substitution instead of a Helm Values placeholder - see README
-# "Managed/env-substituted secrets".
+# "Managed/env-substituted secrets". The example values below are just
+# that - an example matching the "kc-master-*" convention used in the
+# project this tool was extracted from; replace them with your own.
 managed:
   enabled: false
   prefix: "kc-master-"

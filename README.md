@@ -149,20 +149,22 @@ identifier will drift.
 
 ### Managed/env-substituted secrets
 
-Some setups wire specific identifiers (by convention, e.g. everything named
-`kc-master-*`) to real Kubernetes Secrets via
+Some setups wire specific identifiers (by whatever naming convention *they*
+use - there's no standard one) to real Kubernetes Secrets via
 `keycloak-config-cli`'s own `IMPORT_VARSUBSTITUTION_ENABLED` env-var
 substitution, instead of a Helm Values placeholder - strictly better, since
 the secret then never touches a ConfigMap. This is **off by default** (most
-charts don't have this wired up) - enable it in config and it'll templatize
-matching clients/users as `$(env:...)` placeholders instead:
+charts don't have this wired up), and `prefix`/`envPrefix`/`label` have **no
+default** once enabled - there's nothing universal to default them to, so
+you must set all three to your own convention or `kc-config-templater`
+refuses to run:
 
 ```yaml
 managed:
   enabled: true
-  prefix: "kc-master-"
-  envPrefix: "KC_MASTER_"
-  label: "Master"
+  prefix: "sys-"        # e.g. a client named "sys-reporter" is "managed"
+  envPrefix: "SYS_"      # -> SYS_REPORTER_SECRET_NAME / SYS_REPORTER_SECRET_VALUE
+  label: "Sys"           # used only for the human-readable generated secret key
 ```
 
 ## Configuration

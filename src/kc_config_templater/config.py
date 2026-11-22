@@ -48,12 +48,36 @@ class ManagedConfig:
     wired up at all, and templating these fields as a Values placeholder
     instead is equally valid (just less good, since the value then has to
     live in a ConfigMap rather than a Secret).
+
+    There is deliberately no default `prefix`/`env_prefix`/`label` - which
+    identifiers get this treatment, and what their env vars are called, is
+    entirely a convention of *your* deployment pipeline, not a Keycloak or
+    keycloak-config-cli standard. (An earlier draft of this tool defaulted
+    these to the one specific project it was extracted from's own naming -
+    that was a bug, not a sensible default for anyone else.) All three are
+    required once `enabled: true`.
     """
 
     enabled: bool = False
-    prefix: str = "kc-master-"
-    env_prefix: str = "KC_MASTER_"
-    label: str = "Master"
+    prefix: str | None = None
+    env_prefix: str | None = None
+    label: str | None = None
+
+    def __post_init__(self) -> None:
+        if not self.enabled:
+            return
+        missing = [
+            name
+            for name, value in (("prefix", self.prefix), ("envPrefix", self.env_prefix), ("label", self.label))
+            if not value
+        ]
+        if missing:
+            raise ValueError(
+                "managed.enabled is true but managed."
+                + ", managed.".join(missing)
+                + " is not set. There is no default for these - they're your deployment"
+                " pipeline's own convention. See README 'Managed/env-substituted secrets'."
+            )
 
 
 DEFAULT_SCAN_TARGETS: tuple[ScanTarget, ...] = (
@@ -119,9 +143,9 @@ class EngineConfig:
             m = raw["managed"]
             kwargs["managed"] = ManagedConfig(
                 enabled=m.get("enabled", False),
-                prefix=m.get("prefix", "kc-master-"),
-                env_prefix=m.get("envPrefix", "KC_MASTER_"),
-                label=m.get("label", "Master"),
+                prefix=m.get("prefix"),
+                env_prefix=m.get("envPrefix"),
+                label=m.get("label"),
             )
 
         if "scanTargets" in raw:

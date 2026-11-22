@@ -1,6 +1,8 @@
 from pathlib import Path
 
-from kc_config_templater.config import DEFAULT_SCAN_TARGETS, EngineConfig
+import pytest
+
+from kc_config_templater.config import DEFAULT_SCAN_TARGETS, EngineConfig, ManagedConfig
 
 
 def test_default_config():
@@ -52,3 +54,17 @@ scanTargets:
     custom = config.scan_targets[-1]
     assert custom.category_prefix == "LdapProvider"
     assert custom.values_segment == "ldapProvider"
+
+
+def test_managed_enabled_without_prefix_raises():
+    with pytest.raises(ValueError, match="managed.prefix"):
+        ManagedConfig(enabled=True)
+
+
+def test_managed_enabled_with_all_fields_is_fine():
+    m = ManagedConfig(enabled=True, prefix="sys-", env_prefix="SYS_", label="System")
+    assert m.prefix == "sys-"
+
+
+def test_managed_disabled_requires_nothing():
+    ManagedConfig(enabled=False)  # must not raise
