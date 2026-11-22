@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "kc-config-templater"
-version = "0.1.0"
+version = "0.1.1"
 description = "Structurally discover and templatize secrets in keycloak-config-cli realm exports, so they never need to be hand-mapped or committed to git."
 readme = "README.md"
 license = "MIT"
