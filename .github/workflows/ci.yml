@@ -24,3 +24,17 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: ruff check .
       - run: pytest -q
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t kc-config-templater:ci .
+      - name: Smoke test
+        run: |
+          mkdir -p /tmp/smoke && cd /tmp/smoke
+          echo '{"realm":"smoke","clients":[{"clientId":"demo","secret":"fakeSecretForCiOnly"}]}' > raw.json
+          docker run --rm -v "$PWD":/work kc-config-templater:ci \
+            template --in-raw raw.json --out-templated templated.json --out-secrets secrets.yaml
+          grep -q '{{ \$.Values.keycloakConfigCli.configSecret.clients.demo }}' templated.json
+          grep -q 'kcClientDemoClientSecret: fakeSecretForCiOnly' secrets.yaml

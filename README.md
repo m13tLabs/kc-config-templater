@@ -55,6 +55,19 @@ cd kc-config-templater
 pip install -e .
 ```
 
+Or as a container, if you'd rather not install Python locally - it runs as a
+non-root user and expects your files under `/work`:
+
+```sh
+docker build -t kc-config-templater .
+docker run --rm -v "$PWD":/work kc-config-templater \
+  template --in-raw raw.json --out-templated templated.json --out-secrets secrets.yaml
+```
+
+Every example below using the `kc-config-templater` binary directly works
+the same way through `docker run --rm -v "$PWD":/work kc-config-templater ...`
+- paths are just relative to `/work` instead of your shell's cwd.
+
 ## Usage
 
 ### 1. Pull a realm from a running Keycloak and templatize it
