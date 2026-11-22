@@ -34,7 +34,9 @@ jobs:
         run: |
           mkdir -p /tmp/smoke && cd /tmp/smoke
           echo '{"realm":"smoke","clients":[{"clientId":"demo","secret":"fakeSecretForCiOnly"}]}' > raw.json
-          docker run --rm -v "$PWD":/work kc-config-templater:ci \
+          # The image's baked-in non-root user (kcct) won't generally match
+          # whichever UID owns the mounted directory, so pass ours through.
+          docker run --rm -u "$(id -u):$(id -g)" -v "$PWD":/work kc-config-templater:ci \
             template --in-raw raw.json --out-templated templated.json --out-secrets secrets.yaml
           grep -q '{{ \$.Values.keycloakConfigCli.configSecret.clients.demo }}' templated.json
           grep -q 'kcClientDemoClientSecret: fakeSecretForCiOnly' secrets.yaml

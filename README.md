@@ -63,10 +63,13 @@ pip install -e .
 ```
 
 Or as a container, if you'd rather not install Python locally - it runs as a
-non-root user and expects your files under `/work`:
+non-root user and expects your files under `/work`. Pass `-u "$(id -u):$(id
+-g)"` so it writes as you, not as the image's baked-in user, which otherwise
+can't write into your mounted directory:
 
 ```sh
-docker run --rm -v "$PWD":/work ghcr.io/m13tlabs/kc-config-templater \
+docker run --rm -u "$(id -u):$(id -g)" -v "$PWD":/work \
+  ghcr.io/m13tlabs/kc-config-templater \
   template --in-raw raw.json --out-templated templated.json --out-secrets secrets.yaml
 ```
 
@@ -77,7 +80,7 @@ Published to GHCR and Docker Hub with identical tags each release
 
 Every example below using the `kc-config-templater` binary directly works
 the same way through
-`docker run --rm -v "$PWD":/work ghcr.io/m13tlabs/kc-config-templater ...`
+`docker run --rm -u "$(id -u):$(id -g)" -v "$PWD":/work ghcr.io/m13tlabs/kc-config-templater ...`
 - paths are just relative to `/work` instead of your shell's cwd.
 
 ## Usage

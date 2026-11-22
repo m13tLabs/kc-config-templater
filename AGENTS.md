@@ -65,6 +65,13 @@ real bug (see "Known quirks / gotchas").
   `ENTRYPOINT ["kc-config-templater"]`. No source is present in the final
   image, only the installed wheel - if you add a runtime dependency, it
   needs to be in `pyproject.toml`'s `dependencies`, not assumed present.
+  `kcct` gets whatever UID `useradd` assigns (1000, the first free one on
+  this base image) - it essentially never matches the UID that owns a
+  caller's bind-mounted `/work`, so both the CI smoke test and the README's
+  `docker run` examples pass `-u "$(id -u):$(id -g)"` to write as the
+  caller instead. Without it, writing `--out-templated`/`--out-secrets`
+  fails with `PermissionError: [Errno 13] Permission denied` (hit this for
+  real in CI, where the runner's UID is 1001).
 - `.github/workflows/ci.yml` - pytest+ruff across 3.10/3.11/3.12, plus a
   `docker` job that builds the image and runs a real `template` call through
   it as a smoke test (checks both the placeholder and the secrets YAML
