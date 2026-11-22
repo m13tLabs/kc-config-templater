@@ -1,4 +1,11 @@
+<p align="center">
+  <img src=".github/assets/logo.svg" alt="kc-config-templater" width="500">
+</p>
+
 # kc-config-templater
+
+[![CI](https://github.com/m13tLabs/kc-config-templater/actions/workflows/ci.yml/badge.svg)](https://github.com/m13tLabs/kc-config-templater/actions/workflows/ci.yml)
+[![Docker Pulls](https://img.shields.io/docker/pulls/m13t/kc-config-templater)](https://hub.docker.com/r/m13t/kc-config-templater)
 
 Keep secrets out of `keycloak-config-cli` realm exports without hand-maintaining
 a map of which client/identity-provider/key has which secret.
@@ -59,13 +66,18 @@ Or as a container, if you'd rather not install Python locally - it runs as a
 non-root user and expects your files under `/work`:
 
 ```sh
-docker build -t kc-config-templater .
-docker run --rm -v "$PWD":/work kc-config-templater \
+docker run --rm -v "$PWD":/work ghcr.io/m13tlabs/kc-config-templater \
   template --in-raw raw.json --out-templated templated.json --out-secrets secrets.yaml
 ```
 
+Published to GHCR and Docker Hub with identical tags each release
+(`ghcr.io/m13tlabs/kc-config-templater:<version>|<major.minor>|latest`,
+`m13t/kc-config-templater:<version>|<major.minor>|latest`), `linux/amd64` and
+`linux/arm64`. Or build it yourself from the `Dockerfile` in this repo.
+
 Every example below using the `kc-config-templater` binary directly works
-the same way through `docker run --rm -v "$PWD":/work kc-config-templater ...`
+the same way through
+`docker run --rm -v "$PWD":/work ghcr.io/m13tlabs/kc-config-templater ...`
 - paths are just relative to `/work` instead of your shell's cwd.
 
 ## Usage
